@@ -92,9 +92,9 @@ None
 .NOTES
 NAME: Update-VMHosts 
 AUTHOR: Max Daneri, VMware 
-LASTEDIT: 2015/02/04 18:47:00 
+LASTEDIT: 2015/02/09 15:40:00 
 KEYWORDS: ESX,ESXi,VMware,Update,Patching
-Version: 1.1
+Version: 1.11
  
 .LINK
 http://developercenter.vmware.com
