@@ -4,12 +4,14 @@
 The cmdlet automate the ESXi update process. 
 
 .DESCRIPTION
-This cmdlet updates the specified hosts. The cmdlet installs patches on the host. The patches that can be located locally or on a Web location.
-When using the LocalPath or WebPath parameters, the ESX/ESXi host attempts to store the patch contents in its local temporary directory. 
-Because ESXi hosts might not have enough free space on their  local drives, this cannot apply to large size patches.If you want to install patches packaged in a ZIP archive, you must extract them and use one of the LocalPath, or WebPath parameters. 
-If you use the LocalPath parameter, you must extract each patch to a folder. The name of the folder must contain the patch ID (for example,"ESX400-200906001"). 
-If you use the WebPath parameter, you must extract each patch to a folder that is published on a Web server. The patch URL address must contain the patch ID (for example, http://myInternalWebServer/esx40/ESX400-200906001/ ).
-Depending on the component to be upgraded, you might have to set the host into a maintenance mode and to restart the host or the hostd management service after applying the patch.
+This cmdlet updates the specified hosts. The cmdlet installs patches on the host. 
+The patch file that can be located locally or on a Web location.
+When using the LocalPath or WebPath parameters, the ESX/ESXi host attempts to store the patch contents in its local temporary directory.
+If you want you can install patches packaged in a ZIP archive,without the need to extract them; specify the zip file in LocalPath parameters.
+If you use the LocalPath parameter as directory, you must extract each patch to a folder. The name of the folder must contain the patch ID (for example,"ESXi600-201601001").  
+If you use the WebPath parameter, you must extract each patch to a folder that is published on a Web server. 
+The patch URL address must contain the patch ID (for example, http://myInternalWebServer/ESXi600-201601001 ). 
+Depending on the component to be upgraded, you might have  to restart the host or the hostd management service after applying the patch.
    
 .PARAMETER VMHost
 Specifies the hosts you want to update.
@@ -28,6 +30,10 @@ Specifies the IP Address used by the web server. By default use the first IP ava
 
 .PARAMETER Port
 Specifies the local web Server port.
+
+.PARAMETER UseFQDN
+Use FQDN of the local host instead of IP Address. 
+Note: Works only when the computer is joined to AD
 
 .PARAMETER Depot
 Specifies the folder location where the patch has been extracts, or the zip file containing the patch. If Depot is a folder the content is published on web server. If Depot is a zip file, the content is extracted on temp and the resulting the folder is published on web server. 
@@ -54,23 +60,23 @@ Indicates that the cmdlet is run only to display the changes that would be made 
 If the value is $true, indicates that the cmdlet asks for confirmation before running. If the value is $false, the cmdlet runs without asking for user confirmation.
 
 .EXAMPLE
-C:\PS>Update-VMHosts -VMHost $vmhost1,$vmhost2 -LocalPath c:\esx40\patches\ESX400-200906001\metadata.zip -IpAddress 172.16.1.23 -Port 8081
+C:\PS>Update-VMHosts -VMHost $vmhost1,$vmhost2 -LocalPath c:\esx60\patches\ESXi600-201601001\metadata.zip -IpAddress 172.16.1.23 -Port 8081
 
 Updates ESX servers using a local file. Before running the cmdlet, you must download the patch file locally and extract to a folder. The name of the folder must contain the patch ID (for example, "ESX400-200906001"). The webserver is bind to 172.16.1.23 on port 8081.
 
 .EXAMPLE	
-C:\PS>$vmhost | Update-VMHosts -WebPath http://myInternalWebServer/esx40/ESX400-200906001/metadata.zip
+C:\PS>$vmhost | Update-VMHosts -WebPath http://myInternalWebServer/patches/ESXi600-201601001/metadata.zip
 
 Upgrades an ESX server using a Web location. Before running the cmdlet, you must download the patch file and extract it to a folder that is published on a Web server. The patch URL address must contain the patch ID (for example, http://myInternalWebServer/esx40/ESX400-200906001/).
 
 
 .EXAMPLE
-C:\PS>Update-VMHosts -ClusterName "Cluster1" -LocalPath c:\esx40\patches\ESX400-200906001\metadata.zip 
+C:\PS>Update-VMHosts -ClusterName "Cluster1" -LocalPath c:\esx60\patches\ESXi600-201601001.zip
 
 Updates any ESX servers under cluster1 using a local file. Before running the cmdlet, you must download the patch file locally and extract to a folder. The name of the folder must contain the patch ID (for example, "ESX400-200906001"). The webserver is bind to the first local IP v4 address on port 8000.
 
 .EXAMPLE
-C:\PS>Update-VMHosts  -LocalPath c:\esx40\patches\ESX400-200906001\metadata.zip  -Name @("esx24","esx23")
+C:\PS>Update-VMHosts  -LocalPath c:\esx60\patches\ESXi600-201601001  -Name @("esx24","esx23")
 
 Updates ESX server esx24 and esx23  using a local file. Before running the cmdlet, you must download the patch file locally and extract to a folder. The name of the folder must contain the patch ID (for example, "ESX400-200906001"). The webserver is bind to the first local IP v4 address on port 8000.
 
@@ -92,9 +98,9 @@ None
 .NOTES
 NAME: Update-VMHosts 
 AUTHOR: Max Daneri, VMware 
-LASTEDIT: 2015/02/09 15:40:00 
+LASTEDIT: 2015/02/11 11:51:00 
 KEYWORDS: ESX,ESXi,VMware,Update,Patching
-Version: 1.11
+Version: 1.12
  
 .LINK
 http://developercenter.vmware.com
@@ -134,11 +140,16 @@ Param(
 	[Parameter(Mandatory=$False,ParameterSetName = "BuildInternalWWW")]  
 	[Parameter(Mandatory=$False, ParameterSetName = "NoBuildInternalWWW")] 
 	[string]$IpAddress= $Null, 
-	 
+
 
 	[Parameter(Mandatory=$False,ParameterSetName = "BuildInternalWWW")]  
 	[Parameter(Mandatory=$False, ParameterSetName = "NoBuildInternalWWW")] 
-	[switch]$Clean = $False, 
+	[switch]$UseFQDN= $False, 
+
+
+	[Parameter(Mandatory=$False,ParameterSetName = "BuildInternalWWW")]  
+	[Parameter(Mandatory=$False, ParameterSetName = "NoBuildInternalWWW")] 
+	[switch]$Clean = $True, 
 	
 	[Parameter(Mandatory=$False, ParameterSetName = "BuildInternalWWW")] 
 	[Parameter(Mandatory=$False,ParameterSetName = "BuildExternalWWW")]
@@ -268,8 +279,7 @@ $ServerName = $CurrentServer.Name
 
 $ServerBuild=$CurrentServer.Build
 
-Write-Host -Object  "#### Patching $ServerName ####"
-Write-Host -Object  "#### Running Build: $ServerBuild ####"
+Write-Host -Object  "#### Patching $ServerName  Build: $ServerBuild ####"
 if ($Build){
 	if ($ServerBuild -eq $Build -or $Force){
 	 Write-Host -Object  "#### No Update required ####"
@@ -278,89 +288,110 @@ if ($Build){
 	 Write-Host -Object  "#### New Build: $Build ####"
 	}
 }
-
-$ConnectionState=$CurrentServer.ConnectionState
- Write-Host -Object  "#### ConnectionState: $ConnectionState ####"
- if ($ConnectionState -eq "NotResponding"){
-	Write-Warning -Message "Skipping Host $ServerName"
-	return
- }
+ try{
+    $ConnectionState=(get-vmhost -Name $ServerName).ConnectionState
+     Write-Host -Object  "#### ConnectionState: $ConnectionState ####"
+     if ($ConnectionState -eq "NotResponding"){
+	    Write-Warning -Message "Skipping Host $ServerName"
+	    return
+     }
  
   
-# Put server in maintenance mode 
-if ($ConnectionState -ne "Maintenance"){
-	Write-Host -Object    "Entering Maintenance Mode"
-	Set-VMhost -VMHost $CurrentServer -State maintenance -Evacuate  -WhatIf:$WhatIf | Out-Null
-}
+    # Put server in maintenance mode 
+    if ($ConnectionState -ne "Maintenance"){
+	    Write-Host -Object  "Entering Maintenance Mode"
+        $CurrentServer|	Set-VMhost  -State maintenance -Evacuate  -WhatIf:$WhatIf -ErrorAction:Stop |Out-Null
+    } 
  
- try{
-	Write-Host -Object  "Patching from $WebPath"
-	 Install-VMHostPatch -VMHost $CurrentServer -WebPath $WebPath -Confirm:$Confirm -WhatIf:$WhatIf | Out-Null
+	Write-Host -Object  "Patching from $WebPath" 
+    $VMHostPatchResults= $CurrentServer| Install-VMHostPatch   -WebPath $WebPath -Confirm:$Confirm -WhatIf:$WhatIf -ErrorAction:Stop
+    $RebootRequired=$false
+    foreach( $VMHostPatchResult in  $VMHostPatchResults){
+        if ($VMHostPatchResult.NeedRestart){ 
+             $RebootRequired=$true
+        }
+        if ($VMHostPatchResult.IsApplicable){
+            Write-Host -Object  "Updated $VMHostPatchResult"
+        }
+    }
+    if($RebootRequired){
+        Write-Warning -Message  "Restart is required"
+    }
+    else{
+        Write-Warning -Message  "No restart is required"
+    }
+    
  
-    if($Reboot){
+    if($Reboot -and $RebootRequired){
 		# Reboot host
 		Write-Host -Object  "Rebooting"
-		$updateHostTask = Restart-VMHost $CurrentServer -confirm:$false  
+		$CurrentServer| Restart-VMHost   -confirm:$false   -WhatIf:$WhatIf | Out-Null
 	
-	# Wait for Server to show as down
-	 $counter=0
-	do {
-		Start-Sleep -Seconds 15
-		$ServerState = (get-vmhost -Server $CurrentServer).ConnectionState
-		if (++$counter -gt 5)
-		{
-			Write-Host -Object  "Resend Reboot Command"
-			Restart-VMHost -Server $CurrentServer -confirm:$false   -WhatIf:$WhatIf | Out-Null
-			$counter=0
-		}
-	}
-	while ($ServerState -ne "NotResponding" -or $WhatIf)
-	Write-Host -Object  "$ServerName is Down"
+	    # Wait for Server to show as down
+	    $counter=0
+	    do {
+		    Start-Sleep -Seconds 15 
+		    $ServerState = (get-vmhost -Name $ServerName).ConnectionState
+		    if (++$counter -gt 5)
+		    {
+			    Write-Host -Object  "Resend Reboot Command"
+                $CurrentServer| Restart-VMHost   -confirm:$false   -WhatIf:$WhatIf | Out-Null
+			    $counter=0
+		    }
+	    }
+	    while ($ServerState -ne "NotResponding" -or $WhatIf)
+	    Write-Host -Object  "$ServerName is Down"
 	 
-	# Wait for server to reboot
-	Write-Host -Object  "Waiting for Reboot ..." -NoNewline
-	do {
-	    Start-Sleep -Seconds 20
-	    $ServerState = (get-vmhost -Server $CurrentServer).ConnectionState
-	    Write-Host -Object  "." -NoNewline
-	}
-	while ($ServerState -ne "Maintenance")
-	Write-Host -Object  "" 
-	Write-Host -Object  "$ServerName is back up"
-	Write-Host -Object  "#### Reboot Complete####"
+	    # Wait for server to reboot
+	    Write-Host -Object  "Waiting for Reboot ..." -NoNewline
+	    do {
+	        Start-Sleep -Seconds 20
+	        $ServerState = (get-vmhost -Name $ServerName).ConnectionState
+	        Write-Host -Object  "." -NoNewline
+	    }
+	    while ($ServerState -ne "Maintenance")
+	    Write-Host -Object  "" 
+	    Write-Host -Object  "$ServerName is back up"
+	    Write-Host -Object  "#### Reboot Complete####"
 	} 
+   
 
     if ($ApplyHostProfile){
-	 try{
-	   Apply-VMHostProfile  $CurrentServer -Confirm:$False -WhatIf:$WhatIf | Out-Null
-	 }
-	 catch
-	 {
-		Write-Error -Message "Host Profile Error"
-	 }
+        try{
+            Write-Host -Object  "Apply HostProfile"
+            $CurrentServer| Apply-VMHostProfile -Confirm:$False -WhatIf:$WhatIf  -ErrorAction:Stop |Out-Null
+        }
+        catch
+        {
+            Write-Error $_
+            Write-Error -Message "Apply Host Profile Error"
+        }
     }
     
  
 	# Exit maintenance mode
 	Write-Host -Object  "Exiting Maintenance mode"
-	Set-VMhost -VMHost $CurrentServer -State Connected 	-WhatIf:$WhatIf | Out-Null
+	Set-VMhost -VMHost $CurrentServer -State Connected 	-WhatIf:$WhatIf -ErrorAction:Stop | Out-Null
 	Write-Host -Object  ""
  
 	
     if ($ApplyHostProfile){
 	    try{
-	        Test-VMHostProfileCompliance  
+            Write-Host -Object  "Test Host Profile Compliancy"
+	        $CurrentServer| Test-VMHostProfileCompliance  -ErrorAction:Stop |Out-Null
 	    }
 	    catch
 	    {
-		    Write-Error -Exception $_
+		    Write-Error $_
+            Write-Error -Message "Test Host Profile Compliance Error"
 	    }
     }
  }
  catch{
-	Write-Error -Exception $_
+    Write-Error $_
+    Write-Warning -Message "Skipping Host $ServerName"	
  }
- return $Ret
+ 
 }
 
 #endregion
@@ -372,30 +403,35 @@ if (!$global:DefaultVIServer){
 }
  
 if (!$VMHost){ 
-	if ($ClusterName ){
+    if ($Location){
+        $VMHost =  Get-VMhost -Location $location
+    }
+	elseif ($ClusterName ){
 		##################
 		## Get Server Objects from the cluster
 		##################
 		# Get VMware Server Object based on name passed as arg
-		if  ($Name  ){
-			$VMHost = @(Get-Cluster $ClusterName | Get-VMhost -Name $Name)
-			}
-		else{
-			$VMHost = @(Get-Cluster $ClusterName |Get-VMhost)
-		}
-	}else
-	{
-	if  ($Name  ){
+        Write-Host -Object  ("Get cluster $ClusterName hosts")		
+		$VMHost = @(Get-Cluster $ClusterName |Get-VMhost)
+	}elseif ($Name  ){
 			$VMHost = @( Get-VMhost -Name $Name)
-			}
-		 else{
+	}
+    else{
 			$Clusters=Get-Cluster  
 			foreach (  $Cluster in $Clusters){
-			$VMHost += @( $Cluster |Get-VMhost)
-			}
-		 }
-		
-	}
+			    $VMHost += @( $Cluster |Get-VMhost)
+			}		 		
+	}    
+}
+if ($VMHost) {
+    Write-Host
+    Write-Host "Selected hosts:" -NoNewline
+    $VMHost
+    Write-Host
+}else
+{
+    Write-Error -Message "No ESX hosts selected"
+    Exit
 }
 $ZipDestinationFolder=$null
 $didcomplete=$false
@@ -406,19 +442,42 @@ try{
             $ZipDestinationFolder=('{0}\{1}' -f $env:TEMP, [System.Guid]::NewGuid().ToString())   
             Expand-Archive -Path $Depot -DestinationPath  $ZipDestinationFolder  -Force:$true
             $Depot=$ZipDestinationFolder
+            if (! (Get-Item -Path $ZipDestinationFolder\metadata.zip)){
+                  Write-Error  -Message "Not a valid depot"
+                  throw new Exception("Not a valid depot")
+            }
+            Push-Location -Path $Depot
         } 
 	    $TargetFile = Convert-StringToBinary -InputString $Executable  -FilePath ('{0}\{1}.exe' -f $env:TEMP, $WebServerExe )
-
-	    if (!$IpAddress ){
-		    $ips=(get-netadapter | get-netipaddress | ? addressfamily -eq 'IPv4').ipaddress
-		    $IpAddress=$ips[0]
-	    }	
-	    Write-Host -Object  ("Starting the Web Server http://{0}:{1}" -f $IpAddress,$Port )
-	    Write-Host -Object  "Base Directory: $Depot"
+        Write-Host -Object  "Base Directory: $Depot"
 	    $HTMLIndexPage|Out-File -FilePath "$Depot\index.html"
-     #Start WebServer
+        if ($UseFQDN) 
+        {
+            $FQDN=(Get-WmiObject win32_computersystem).DNSHostName+"."+(Get-WmiObject win32_computersystem).Domain  
+            $WebPath="http://${FQDN}:${Port}/metadata.zip"    
+            if ($IpAddress ){ 
+                Write-Host -Object  ("Starting the Web Server IP:{0} Port:{1}" -f $IpAddress,$Port )   
+            }else
+            {
+                Write-Host -Object  "Starting the Web Server Port:$Port"               
+            } 
+        }
+        if (!$IpAddress ){ 
+		    $ips=(get-netadapter | get-netipaddress | ? addressfamily -eq 'IPv4').ipaddress
+		    $IpAddress=$ips[0] 
+	    }	
+        if (!$Webpath)
+        {
+            Write-Host -Object  ("Starting the Web Server http://{0}:{1}" -f $IpAddress,$Port )    
+            $WebPath="http://${IpAddress}:${Port}/metadata.zip"            
+        }
+        #Start WebServer
 	    & $TargetFile $Depot $Port $IpAddress
-	    $WebPath="http://${IpAddress}:${Port}/metadata.zip"
+	   
+ 
+        
+	   
+	    
     }elseif ($WebPath -Notlike "*metadata.zip"){
 	     $WebPath+="metadata.zip"	 
     } 
@@ -434,10 +493,12 @@ Finally{
     if (! $didcomplete){Write-Warning  -Message "Operation aborted....."}
     if ($Depot)
     { 
-        Write-Host -Object "Stopping the Web Server"
-	    Stop-Process -ProcessName $WebServerExe -ErrorAction SilentlyContinue
+        Write-Host -Object "Stopping the Web Server ($WebServerExe)"
+	    Stop-Process -ProcessName $WebServerExe
+# -ErrorAction SilentlyContinue
         Start-Sleep -Seconds 3
-	    if (!$Clean)
+        Pop-Location 
+	    if ($Clean)
 	    {
             Write-Host -Object "Cleaning temporary files"
 		    Remove-Item -Path $Depot\*_log
