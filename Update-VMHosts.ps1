@@ -100,7 +100,7 @@ NAME: Update-VMHosts
 AUTHOR: Max Daneri, VMware 
 LASTEDIT: 2015/02/11 11:51:00 
 KEYWORDS: ESX,ESXi,VMware,Update,Patching
-Version: 1.12
+Version: 1.13
  
 .LINK
 http://developercenter.vmware.com
@@ -314,14 +314,22 @@ if ($Build){
             Write-Host -Object  "Updated $VMHostPatchResult"
         }
     }
+	
     if($RebootRequired){
         Write-Warning -Message  "Restart is required"
     }
     else{
-        Write-Warning -Message  "No restart is required"
+	    Start-Sleep -Seconds 20 
+		if($((get-vmhost -Name $ServerName)|Get-view).Summary.RebootRequired){
+			Write-Warning -Message  "Host is asking for a reboot"
+			$RebootRequired=$true
+		}
+		else{
+			Write-Warning -Message  "No restart is required"
+		}
     }
     
- 
+	
     if($Reboot -and $RebootRequired){
 		# Reboot host
 		Write-Host -Object  "Rebooting"
@@ -330,9 +338,9 @@ if ($Build){
 	    # Wait for Server to show as down
 	    $counter=0
 	    do {
-		    Start-Sleep -Seconds 15 
+		    Start-Sleep -Seconds 20 
 		    $ServerState = (get-vmhost -Name $ServerName).ConnectionState
-		    if (++$counter -gt 5)
+		    if (++$counter -gt 7)
 		    {
 			    Write-Host -Object  "Resend Reboot Command"
                 $CurrentServer| Restart-VMHost   -confirm:$false   -WhatIf:$WhatIf | Out-Null
@@ -343,7 +351,7 @@ if ($Build){
 	    Write-Host -Object  "$ServerName is Down"
 	 
 	    # Wait for server to reboot
-	    Write-Host -Object  "Waiting for Reboot ..." -NoNewline
+	    Write-Host -Object  "Waiting for Host ..." -NoNewline
 	    do {
 	        Start-Sleep -Seconds 20
 	        $ServerState = (get-vmhost -Name $ServerName).ConnectionState
